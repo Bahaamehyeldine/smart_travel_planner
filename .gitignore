@@ -14,7 +14,7 @@ venv/
 # ML models and data
 data/models/*.joblib
 data/raw/
-data/processed/
+data/processed/*
 !data/processed/destinations_labeled.csv
 
 # Logs
