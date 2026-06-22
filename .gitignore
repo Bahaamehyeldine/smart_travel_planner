@@ -15,6 +15,7 @@ venv/
 data/models/*.joblib
 data/raw/
 data/processed/
+!data/processed/destinations_labeled.csv
 
 # Logs
 backend/logs/*.log
