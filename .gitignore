@@ -16,6 +16,7 @@ data/models/*.joblib
 data/raw/
 data/processed/*
 !data/processed/destinations_labeled.csv
+!data/processed/features.csv
 
 # Logs
 backend/logs/*.log
