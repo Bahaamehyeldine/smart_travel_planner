@@ -38,6 +38,16 @@ RANDOM_SEED = 42
 random.seed(RANDOM_SEED)
 np.random.seed(RANDOM_SEED)
 
+CLASS_LABELS = ['Adventure', 'Relaxation', 'Culture', 'Budget', 'Luxury', 'Family']
+
+
+def f1_macro(y_true, y_pred):
+    """Macro F1 scorer with fixed labels — avoids sklearn 1.4.x make_scorer issue."""
+    return f1_score(y_true, y_pred, average='macro', zero_division=0, labels=CLASS_LABELS)
+
+
+f1_macro_scorer = make_scorer(f1_macro)
+
 
 class FeatureMatrixInput(BaseModel):
     n_rows: int
@@ -63,7 +73,7 @@ class FeatureMatrixInput(BaseModel):
     @field_validator("label_classes")
     @classmethod
     def expected_classes(cls, v: list[str]) -> list[str]:
-        expected = {"Adventure", "Relaxation", "Culture", "Budget", "Luxury", "Family"}
+        expected = set(CLASS_LABELS)
         actual = set(v)
         if actual != expected:
             raise ValueError(f"Unexpected label classes: {actual}")
@@ -165,7 +175,7 @@ def evaluate_model(name, pipeline, X_train, y_train,
     cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=RANDOM_SEED)
     scoring = {
         'accuracy': 'accuracy',
-        'f1_macro': make_scorer(f1_score, average='macro', zero_division=0),
+        'f1_macro': f1_macro_scorer,
     }
     fit_params = {}
     if sample_weights is not None:
@@ -183,8 +193,8 @@ def evaluate_model(name, pipeline, X_train, y_train,
     f1_mean = cv_results['test_f1_macro'].mean()
     f1_std = cv_results['test_f1_macro'].std()
     logger.info("model_evaluated", model=name,
-                accuracy=f"{accuracy_mean:.3f}±{accuracy_std:.3f}",
-                f1=f"{f1_mean:.3f}±{f1_std:.3f}")
+                accuracy=f"{accuracy_mean:.3f}+-{accuracy_std:.3f}",
+                f1=f"{f1_mean:.3f}+-{f1_std:.3f}")
     return {
         "accuracy_mean": accuracy_mean, "accuracy_std": accuracy_std,
         "f1_mean": f1_mean, "f1_std": f1_std,
@@ -211,12 +221,11 @@ def tune_best_model(name, pipeline, X_train, y_train):
         return pipeline, {}
 
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_SEED)
-    scorer = make_scorer(f1_score, average='macro', zero_division=0)
     logger.info("tuning_model", model=name)
-
     grid_search = GridSearchCV(
         pipeline, param_grid, cv=cv,
-        scoring=scorer, n_jobs=-1, verbose=0,
+        scoring=f1_macro_scorer,
+        n_jobs=-1, verbose=0,
     )
     grid_search.fit(X_train, y_train)
     logger.info("tuning_complete", model=name,
@@ -228,9 +237,8 @@ def tune_best_model(name, pipeline, X_train, y_train):
 def get_per_class_metrics(pipeline, X_test, y_test):
     y_pred = pipeline.predict(X_test)
     report = classification_report(y_test, y_pred, output_dict=True, zero_division=0)
-    classes = ["Adventure", "Relaxation", "Culture", "Budget", "Luxury", "Family"]
     per_class = {}
-    for cls in classes:
+    for cls in CLASS_LABELS:
         if cls in report:
             per_class[cls] = {
                 "precision": round(report[cls]["precision"], 4),
@@ -255,7 +263,7 @@ def main():
     results = {}
 
     print("\n" + "="*60)
-    print("PHASE 2a — BASELINE MODEL COMPARISON")
+    print("PHASE 2a - BASELINE MODEL COMPARISON")
     print("="*60)
 
     for name, pipeline in models.items():
