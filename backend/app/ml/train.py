@@ -1,6 +1,9 @@
 """
 train.py
 Trains and compares ML classifiers for travel style prediction.
+Phase 2a: keyword features only
+Phase 2b: keyword + sentence embedding features
+
 Run from backend/ directory:
     python -m app.ml.train
 """
@@ -95,16 +98,47 @@ def validate_feature_matrix(df: pd.DataFrame) -> None:
         raise
 
 
-def load_data():
+def load_data(use_embeddings: bool = False):
+    """
+    Load feature matrix and split into train/test sets.
+
+    Args:
+        use_embeddings: if True, augment features with PCA-reduced embeddings
+
+    Returns:
+        X_train, X_test, y_train, y_test
+    """
     df = pd.read_csv(FEATURES_PATH)
     validate_feature_matrix(df)
     logger.info("data_loaded", shape=str(df.shape))
+
     X = df.drop(columns=['label', 'destination_name'])
     y = df['label']
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, stratify=y, random_state=RANDOM_SEED
+    destinations = df['destination_name'].tolist()
+
+    # Stratified split — also return integer indices for PCA fitting
+    X_train, X_test, y_train, y_test, train_idx, test_idx = train_test_split(
+        X, y, np.arange(len(X)),
+        test_size=0.2, stratify=y, random_state=RANDOM_SEED
     )
-    logger.info("data_split", train=len(X_train), test=len(X_test))
+
+    if use_embeddings:
+        from app.ml.embedding_extractor import add_embedding_features
+        logger.info("adding_embedding_features")
+
+        # Pass train_idx so PCA is fit on training rows only — no leakage
+        X_augmented = add_embedding_features(
+            df.drop(columns=['label', 'destination_name']),
+            destinations,
+            train_indices=train_idx,
+        )
+        X_train = X_augmented.iloc[train_idx].reset_index(drop=True)
+        X_test = X_augmented.iloc[test_idx].reset_index(drop=True)
+        y_train = y_train.reset_index(drop=True)
+        y_test = y_test.reset_index(drop=True)
+
+    logger.info("data_split", train=len(X_train), test=len(X_test),
+                features=len(X_train.columns))
     return X_train, X_test, y_train, y_test
 
 
@@ -252,7 +286,8 @@ def get_per_class_metrics(pipeline, X_test, y_test):
 def main():
     logger.info("training_started", seed=RANDOM_SEED)
 
-    X_train, X_test, y_train, y_test = load_data()
+    # ── Phase 2a: keyword features only ───────
+    X_train, X_test, y_train, y_test = load_data(use_embeddings=False)
     class_weights = get_class_weights(y_train)
     sample_weights = get_sample_weights(y_train, class_weights)
     models = get_models(class_weights)
@@ -263,7 +298,7 @@ def main():
     results = {}
 
     print("\n" + "="*60)
-    print("PHASE 2a - BASELINE MODEL COMPARISON")
+    print("PHASE 2a - KEYWORD FEATURES ONLY")
     print("="*60)
 
     for name, pipeline in models.items():
@@ -287,8 +322,9 @@ def main():
 
     print(f"\nBest baseline: {best_model_name} (F1: {best_f1:.3f})")
 
+    # Tune best Phase 2a model
     print("\n" + "="*60)
-    print(f"TUNING: {best_model_name}")
+    print(f"TUNING Phase 2a: {best_model_name}")
     print("="*60)
 
     tuned_pipeline, best_params = tune_best_model(best_model_name, best_pipeline, X_train, y_train)
@@ -299,31 +335,123 @@ def main():
     print(f"Best params: {best_params}")
     print(f"Improvement: {tuned_result['f1_mean'] - best_f1:+.3f}")
 
-    print("\n" + "="*60)
-    print("FINAL EVALUATION ON HELD-OUT TEST SET")
-    print("="*60)
-
+    # Final evaluation Phase 2a
     tuned_pipeline.fit(X_train, y_train)
-    per_class = get_per_class_metrics(tuned_pipeline, X_test, y_test)
+    per_class_2a = get_per_class_metrics(tuned_pipeline, X_test, y_test)
 
+    print("\n" + "="*60)
+    print("PHASE 2a - FINAL TEST SET EVALUATION")
+    print("="*60)
     print(f"\n{'Class':<15} {'Precision':>10} {'Recall':>10} {'F1':>10} {'Support':>10}")
     print("-"*55)
-    for cls, metrics in per_class.items():
+    for cls, metrics in per_class_2a.items():
         print(f"{cls:<15} {metrics['precision']:>10.3f} {metrics['recall']:>10.3f} "
               f"{metrics['f1']:>10.3f} {metrics['support']:>10}")
 
-    model_path = MODELS_DIR / f"{best_model_name}_v1.joblib"
-    joblib.dump(tuned_pipeline, model_path)
-
-    log_experiment(f"{best_model_name}_WINNER", best_params,
+    # Save Phase 2a model
+    model_path_2a = MODELS_DIR / f"{best_model_name}_phase2a_v1.joblib"
+    joblib.dump(tuned_pipeline, model_path_2a)
+    log_experiment(f"{best_model_name}_phase2a_WINNER", best_params,
                   tuned_result["accuracy_mean"], tuned_result["accuracy_std"],
                   tuned_result["f1_mean"], tuned_result["f1_std"],
-                  per_class, RANDOM_SEED, str(model_path))
+                  per_class_2a, RANDOM_SEED, str(model_path_2a))
 
-    print(f"\n✅ Winner: {best_model_name}")
-    print(f"✅ CV F1: {tuned_result['f1_mean']:.3f}")
-    print(f"✅ Saved: {model_path}")
-    print(f"✅ Results: {RESULTS_PATH}")
+    # ── Phase 2b: keyword + embedding features ─
+    print("\n" + "="*60)
+    print("PHASE 2b - KEYWORD + EMBEDDING FEATURES")
+    print("="*60)
+
+    X_train_emb, X_test_emb, y_train_emb, y_test_emb = load_data(use_embeddings=True)
+    class_weights_emb = get_class_weights(y_train_emb)
+    sample_weights_emb = get_sample_weights(y_train_emb, class_weights_emb)
+    models_emb = get_models(class_weights_emb)
+
+    emb_best_f1 = 0.0
+    emb_best_name = ""
+    emb_best_pipeline = None
+    emb_results = {}
+
+    for name, pipeline in models_emb.items():
+        sw = sample_weights_emb if name == "GradientBoosting" else None
+        result = evaluate_model(f"{name}_emb", pipeline, X_train_emb, y_train_emb, sw)
+        emb_results[name] = result
+        params = pipeline.named_steps['clf'].get_params()
+        log_experiment(f"{name}_phase2b", params, result["accuracy_mean"],
+                      result["accuracy_std"], result["f1_mean"],
+                      result["f1_std"], {}, RANDOM_SEED)
+        if result["f1_mean"] > emb_best_f1:
+            emb_best_f1 = result["f1_mean"]
+            emb_best_name = name
+            emb_best_pipeline = pipeline
+
+    print(f"\n{'Model':<25} {'Accuracy':>15} {'Macro F1':>15}")
+    print("-"*60)
+    for name, result in emb_results.items():
+        marker = " <- BEST" if name == emb_best_name else ""
+        print(f"{name:<25} {result['accuracy_mean']:.3f}+-{result['accuracy_std']:.3f}  "
+              f"{result['f1_mean']:.3f}+-{result['f1_std']:.3f}{marker}")
+
+    print(f"\nPhase 2a tuned F1: {tuned_result['f1_mean']:.3f}")
+    print(f"Phase 2b best F1:  {emb_best_f1:.3f}")
+    print(f"Embedding delta:   {emb_best_f1 - tuned_result['f1_mean']:+.3f}")
+
+    # Tune best Phase 2b model
+    print("\n" + "="*60)
+    print(f"TUNING Phase 2b: {emb_best_name}")
+    print("="*60)
+
+    tuned_emb_pipeline, emb_best_params = tune_best_model(
+        emb_best_name, emb_best_pipeline, X_train_emb, y_train_emb
+    )
+    sw = sample_weights_emb if emb_best_name == "GradientBoosting" else None
+    tuned_emb_result = evaluate_model(
+        f"{emb_best_name}_emb_tuned", tuned_emb_pipeline, X_train_emb, y_train_emb, sw
+    )
+
+    print(f"\nTuned F1: {tuned_emb_result['f1_mean']:.3f} +- {tuned_emb_result['f1_std']:.3f}")
+    print(f"Best params: {emb_best_params}")
+    print(f"Improvement from tuning: {tuned_emb_result['f1_mean'] - emb_best_f1:+.3f}")
+
+    # Final evaluation Phase 2b
+    tuned_emb_pipeline.fit(X_train_emb, y_train_emb)
+    per_class_2b = get_per_class_metrics(tuned_emb_pipeline, X_test_emb, y_test_emb)
+
+    # Side-by-side comparison
+    print("\n" + "="*60)
+    print("PHASE 2a vs 2b - PER CLASS COMPARISON")
+    print("="*60)
+    print(f"\n{'Class':<15} {'2a F1':>10} {'2b F1':>10} {'Delta':>10}")
+    print("-"*50)
+    for cls in CLASS_LABELS:
+        f1_2a = per_class_2a.get(cls, {}).get('f1', 0)
+        f1_2b = per_class_2b.get(cls, {}).get('f1', 0)
+        delta = f1_2b - f1_2a
+        marker = " +" if delta > 0 else (" -" if delta < 0 else "")
+        print(f"{cls:<15} {f1_2a:>10.3f} {f1_2b:>10.3f} {delta:>+10.3f}{marker}")
+
+    # Save Phase 2b model
+    model_path_2b = MODELS_DIR / f"{emb_best_name}_phase2b_v1.joblib"
+    joblib.dump(tuned_emb_pipeline, model_path_2b)
+    log_experiment(f"{emb_best_name}_phase2b_WINNER", emb_best_params,
+                  tuned_emb_result["accuracy_mean"], tuned_emb_result["accuracy_std"],
+                  tuned_emb_result["f1_mean"], tuned_emb_result["f1_std"],
+                  per_class_2b, RANDOM_SEED, str(model_path_2b))
+
+    # Final summary
+    final_f1_2a = tuned_result['f1_mean']
+    final_f1_2b = tuned_emb_result['f1_mean']
+    winner = "Phase 2b (embeddings)" if final_f1_2b > final_f1_2a else "Phase 2a (keywords only)"
+
+    print("\n" + "="*60)
+    print("FINAL SUMMARY")
+    print("="*60)
+    print(f"\nPhase 2a final F1: {final_f1_2a:.3f}")
+    print(f"Phase 2b final F1: {final_f1_2b:.3f}")
+    print(f"Overall delta:     {final_f1_2b - final_f1_2a:+.3f}")
+    print(f"\nBest approach: {winner}")
+    print(f"\n✅ Phase 2a model: {model_path_2a}")
+    print(f"✅ Phase 2b model: {model_path_2b}")
+    print(f"✅ Results logged: {RESULTS_PATH}")
 
 
 if __name__ == "__main__":
