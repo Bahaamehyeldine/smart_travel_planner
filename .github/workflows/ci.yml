@@ -15,8 +15,8 @@ jobs:
       DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci
       SECRET_KEY: ci-only-not-a-secret
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: pip
@@ -24,8 +24,8 @@ jobs:
       - name: Install dependencies (CPU-only PyTorch)
         run: |
           pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install -r requirements.txt ruff
+          pip install -r requirements.txt ruff==0.15.11
       - name: Lint
-        run: ruff check --config ../ruff.toml .
+        run: ruff check --output-format=github --config ../ruff.toml .
       - name: Tests
         run: python -m pytest -v
