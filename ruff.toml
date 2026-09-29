@@ -1,0 +1,6 @@
+target-version = "py311"
+extend-exclude = ["frontend", "data"]
+
+[lint.per-file-ignores]
+# Alembic's env.py must configure the context before importing app models.
+"backend/alembic/env.py" = ["E402"]

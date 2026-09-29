@@ -1,5 +1,9 @@
 # ✈️ Smart Travel Planner
 
+[![CI](https://github.com/Bahaamehyeldine/smart_travel_planner/actions/workflows/ci.yml/badge.svg)](https://github.com/Bahaamehyeldine/smart_travel_planner/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.11-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+
 > An end-to-end AI travel recommendation system combining RAG retrieval, ML classification, and LLM generation in a production-ready full-stack architecture.
 
 Built as a portfolio project for the SE Factory AI Engineering Bootcamp. Given a natural language query, the system retrieves semantically relevant destination information from a pgvector index, classifies the user's travel style using a trained scikit-learn classifier, and synthesizes a grounded recommendation via a Groq-hosted LLM — all orchestrated by a LangGraph stateful agent.
@@ -72,7 +76,7 @@ Built as a portfolio project for the SE Factory AI Engineering Bootcamp. Given a
 | ORM | SQLAlchemy async | 2.0.30 | Type-safe, async-first, alembic migrations |
 | Validation | Pydantic | v2 | Enforced at every external boundary |
 | Logging | structlog | 24.1.0 | Structured JSON logs, no print statements |
-| Testing | pytest + pytest-asyncio | 8.2 | 43 tests, mocked boundaries, no live deps required |
+| Testing | pytest + pytest-asyncio | 8.2 | 43 tests; 41 fully offline, 2 load the real embedding model (`-m network`) |
 | Containers | Docker Compose | — | Single-command full stack |
 
 ---
@@ -169,8 +173,8 @@ python -m app.rag.indexer
 
 ```bash
 cd backend
-python -m pytest tests/ -v
-# 43 passed in 9.40s
+python -m pytest tests/ -v              # all 43 (downloads the embedding model once)
+python -m pytest tests/ -m "not network" # 41 offline tests, ~5 s
 ```
 
 ### Local development (without Docker)
@@ -472,6 +476,6 @@ Fetching 200 Wikivoyage articles in sequence triggers Cloudflare rate limiting d
 ## Author
 
 **Bahaa Mehye Eddin**
-Data Scientist & AI Engineer · Tripoli, Lebanon
+Data Scientist & AI Engineer · MSc Data Science & AI, Université Côte d'Azur
 SE Factory AI Engineering Bootcamp · 2026
 [GitHub](https://github.com/Bahaamehyeldine)

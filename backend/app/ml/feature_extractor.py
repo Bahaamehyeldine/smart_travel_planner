@@ -15,7 +15,6 @@ Improvements over v1:
 - Incremental progress saving prevents data loss on failure
 """
 
-import re
 import json
 import pandas as pd
 from pathlib import Path

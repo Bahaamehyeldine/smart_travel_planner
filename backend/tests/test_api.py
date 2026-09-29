@@ -9,7 +9,6 @@ These tests verify:
 - Chat endpoint invokes the LangGraph agent
 - History endpoint respects query parameter bounds
 """
-import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 
 
