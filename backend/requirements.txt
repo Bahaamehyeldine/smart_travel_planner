@@ -8,7 +8,7 @@ pydantic-settings==2.2.1
 python-dotenv==1.2.2
 httpx==0.27.0
 structlog==24.1.0
-langgraph==0.0.69
+langgraph==1.2.12
 langchain-core==0.2.2
 sentence-transformers==2.7.0
 scikit-learn==1.4.2
