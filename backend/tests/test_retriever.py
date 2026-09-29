@@ -8,11 +8,22 @@ These tests verify:
 - Model loader is properly cached (singleton pattern)
 - Return structure matches expected schema
 """
+import numpy as np
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 
 
+@pytest.fixture
+def fake_embedder():
+    """Stub the embedding model so retrieval tests run offline and fast."""
+    model = MagicMock()
+    model.encode.return_value = np.zeros(384, dtype=np.float32)
+    with patch("app.rag.retriever.get_model", return_value=model):
+        yield model
+
+
 class TestRetrieve:
+    @pytest.mark.usefixtures("fake_embedder")
     async def test_returns_empty_list_on_db_error(self):
         """
         Retriever must return [] on database failure — not raise an exception.
@@ -30,6 +41,7 @@ class TestRetrieve:
             result = await retrieve("hiking mountains", top_k=3)
             assert result == []
 
+    @pytest.mark.usefixtures("fake_embedder")
     async def test_returns_correct_structure(self):
         """
         Each retrieved chunk must have the four expected keys.
@@ -65,6 +77,7 @@ class TestRetrieve:
                 assert "chunk_index" in chunk
                 assert "similarity" in chunk
 
+    @pytest.mark.usefixtures("fake_embedder")
     async def test_similarity_values_are_floats(self):
         """Similarity scores must be floats rounded to 4 decimal places."""
         from app.rag.retriever import retrieve
@@ -85,6 +98,7 @@ class TestRetrieve:
             if result:
                 assert isinstance(result[0]["similarity"], float)
 
+    @pytest.mark.network
     def test_get_model_returns_sentence_transformer(self):
         """
         Model loader should return a SentenceTransformer instance.
@@ -95,6 +109,7 @@ class TestRetrieve:
         model = get_model()
         assert isinstance(model, SentenceTransformer)
 
+    @pytest.mark.network
     def test_get_model_is_cached(self):
         """
         Model loader must return the same instance on repeated calls.

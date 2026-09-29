@@ -9,14 +9,12 @@ These tests verify:
 - Feature vector has correct structure and values
 - Class thresholds match the documented labeling rubric
 """
-import pytest
 from app.ml.feature_extractor import (
     _count_keywords,
     _extract_price_tier,
     _compute_keyword_features,
     _compute_region_features,
     ADVENTURE_KEYWORDS,
-    BUDGET_KEYWORDS,
     CLASS_THRESHOLDS,
     REGIONS,
 )
