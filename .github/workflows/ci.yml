@@ -14,7 +14,7 @@ jobs:
     env:
       DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
